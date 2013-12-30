@@ -178,7 +178,7 @@ public class Settings {
     // Index 0 is unused; index 1 onward corresponds to a uniform number.
     public static final Point[] FORMATION = {
         new Point( 00.0,  00.0),  //Center of field
-        new Point( 00.0,  02.0),  //Player 1
+        new Point( 00.0,  01.0),  //Player 1
     	new Point( 00.0,  20.0),  
     	new Point(-10.0,  10.0),
     	new Point(-20.0,  20.0),
