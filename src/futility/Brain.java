@@ -92,6 +92,13 @@ public class Brain implements Runnable {
         // Load the response history
         this.responseHistory.add(Settings.RESPONSE.NONE);
         this.responseHistory.add(Settings.RESPONSE.NONE);
+        roundToNearestHole(new Point(0,16));
+        roundToNearestHole(new Point(11,0));
+        roundToNearestHole(new Point(0,-11));
+        roundToNearestHole(new Point(-11,0));
+        roundToNearestHole(new Point(0,-9));
+        roundToNearestHole(new Point(10,5));
+        roundToNearestHole(new Point(10,-5));
     }
     
     ///////////////////////////////////////////////////////////////////////////
@@ -338,10 +345,74 @@ public class Brain implements Runnable {
     		return d*(-1.00);
 	}
     
-    public Point determineNextHole(Point current_position){
-    	Point next = new Point();
+    public Point roundToNearestTens(Point P){
+    	// This method rounds a given position to its nearest tens - for example, the rounded position for (12, -17) would be (10, -20)
+    	// This helps in locating nearby holes more easily
+    	double multX = 10.00;
+    	double multY = 10.00;
+    	if(P.getX()<0.00)
+    		multX = -10.00;
+    	if(P.getY()<0.00)
+    		multY = -10.00;
+    	int roundX = (int)(abs(P.getX())+5.00)/10;
+    	int roundY = (int)(abs(P.getY())+5.00)/10;
+    	Point rounded_tens = new Point(multX*roundX, multY*roundY);
+    	System.out.println("Rounded tens point is ("+rounded_tens.getX()+", "+rounded_tens.getY()+").");
+    	return rounded_tens;
+    }
+    
+    public boolean isRTaHole(Point P){
+    	// This method is only for rounded tens
+    	// Returns true iff rounded-ten point is a hole
+    	
+    	int normalX = (int)abs(P.getX())/10;
+    	int normalY = (int)abs(P.getY())/10;
+    	if(normalX%2==normalY%2)
+    		return true;
+    	else
+    		return false;
+    }
+    
+    public Point roundToNearestHole(Point P){
+    	System.out.println("Rounding point ("+P.getX()+", "+P.getY()+").");
+    	Point roundedTens = roundToNearestTens(P);
+    	if(isRTaHole(roundedTens)){
+    		System.out.println("RT is a hole");
+    		System.out.println("Rounded off point is ("+roundedTens.getX()+", "+roundedTens.getY()+").");
+    		return roundedTens;
+    	}
+    	else{
+        	Point roundedHole;
+	    	double diffX = P.getX()-roundedTens.getX();
+	    	double diffY = P.getY()-roundedTens.getY();
+	    	
+	    	if(abs(diffX)<abs(diffY)){
+	    		//Point closer to vertical axis of the diamond
+	    		if(diffY>0)
+	    			roundedHole = new Point(roundedTens.getX(), roundedTens.getY()+10);
+	    		else
+	    			roundedHole = new Point(roundedTens.getX(), roundedTens.getY()-10);
+	    	}
+	    	else{
+	    		//Point closer to horizontal axis of the diamond
+	    		if(diffX>0)
+	    			roundedHole = new Point(roundedTens.getX()+10, roundedTens.getY());
+	    		else
+	    			roundedHole = new Point(roundedTens.getX()-10, roundedTens.getY());
+	    	}
+	    	System.out.println("Rounded off point is ("+roundedHole.getX()+", "+roundedHole.getY()+").");
+	    	return roundedHole;
+    	}
+    }
+    
+    public Point determineTargetHole(){
+    	Point rounded_position = roundToNearestHole(this.player.position.getPosition());
+    	// Create a list of nearby holes
+    	// Find the best one
+    	Point target = new Point();
+    	// All holes are of the format (20*k1, 20*k2) or (20*k1+10,20*k2+10)
     	// Determines the next hole the player should fill based on his current position
-    	return next;
+    	return target;
     }
     
     public void kickToClosestPlayer(Strategy calleeStrategy){
