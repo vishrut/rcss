@@ -21,11 +21,10 @@ public class Brain implements Runnable {
      * Enumerator representing the possible strategies that may be used by this player agent.
      */
     public enum Strategy {
-    	FILL_HOLE,
+    	TIKI_TAKA,
     	PRE_KICK_OFF_POSITION,
     	PRE_KICK_OFF_ANGLE,
         DRIBBLE_KICK,
-        ACTIVE_INTERCEPT,
         DASH_TOWARDS_BALL_AND_KICK,
         LOOK_AROUND,
         GET_BETWEEN_BALL_AND_GOAL,
@@ -61,6 +60,12 @@ public class Brain implements Runnable {
     private long timeLastSenseBody = 0;
     private int lastRan = -1;
 
+	//public boolean occupying_hole = true;
+    public Point target_hole = null;
+    public double next = 1.00;
+    public boolean isIdle = true;
+    //public boolean inTransit = false;
+
     private int noSeeBallCount = 0;
     private final int noSeeBallCountMax = 45;
     
@@ -92,13 +97,7 @@ public class Brain implements Runnable {
         // Load the response history
         this.responseHistory.add(Settings.RESPONSE.NONE);
         this.responseHistory.add(Settings.RESPONSE.NONE);
-        roundToNearestHole(new Point(0,16));
-        roundToNearestHole(new Point(11,0));
-        roundToNearestHole(new Point(0,-11));
-        roundToNearestHole(new Point(-11,0));
-        roundToNearestHole(new Point(0,-9));
-        roundToNearestHole(new Point(10,5));
-        roundToNearestHole(new Point(10,-5));
+        // roundToNearestHole(new Point(0,16));
     }
     
     ///////////////////////////////////////////////////////////////////////////
@@ -127,21 +126,25 @@ public class Brain implements Runnable {
         	// Check play mode and reposition as necessary.
         	if (this.canUseMove()) {
         		utility = 1 - (isPositioned ? 1 : 0);
+        		if(this.isPositioned)
+        			if(this.player.number!=1)
+        				this.executeStrategy(Strategy.LOOK_AROUND);
         	}
+        	else
+        		utility = 0;
         	break;
         case PRE_KICK_OFF_ANGLE:
         	if (this.isPositioned) {
         	    utility = this.player.team.side == 'r' ?
         			      ( this.canSee(Ball.ID) ? 0.0 : 1.0 ) : 0.0;
             }
+        	else
+        		utility = 0;
         	break;
-        case WING_POSITION:
-        	if (PlayerRole.isWing(this.role)) {
-        	    // A wing should use this strategy if another player on the wing's team
-        	    // is closer to the ball, or something like that.
-        	    utility = 0.70;
-        	}
-        	break;	
+        case TIKI_TAKA:
+        	utility = 0.9;
+        	break;
+        /*
         case DRIBBLE_KICK:
         	Rectangle OPP_PENALTY_AREA = ( this.player.team.side == 'l' ) ?
         			Settings.PENALTY_AREA_RIGHT : Settings.PENALTY_AREA_LEFT;
@@ -156,6 +159,16 @@ public class Brain implements Runnable {
         				  0.95 : 0.0;
         	}
         	break;
+        	
+       
+        case WING_POSITION:
+        	if (PlayerRole.isWing(this.role)) {
+        	    // A wing should use this strategy if another player on the wing's team
+        	    // is closer to the ball, or something like that.
+        	    utility = 0.70;
+        	}
+        	break;	
+       
         case DASH_TOWARDS_BALL_AND_KICK:
             // The striker(s) should usually execute this strategy.
             // The wings, mid-fielders and defenders should generally execute this strategy when
@@ -218,6 +231,7 @@ public class Brain implements Runnable {
         case RUN_TO_STARTING_POSITION:
         	utility = noSeeBallCount / (noSeeBallCountMax + 2);
         	break;
+        */
         default:
             utility = 0;
             break;
@@ -322,8 +336,6 @@ public class Brain implements Runnable {
         return this.curSenseInfo.effort;
     }
         
-    public static int first_kick=1; //Player's first kick will be in opponent goal direction.
-    
     /**
      * Executes a strategy for the player in the current time step.
      * 
@@ -407,15 +419,17 @@ public class Brain implements Runnable {
     
     public Point determineTargetHole(){
     	Point rounded_position = roundToNearestHole(this.player.position.getPosition());
-    	// Create a list of nearby holes
-    	// Find the best one
+    	Point front_up = new Point(rounded_position.getX()+10,rounded_position.getY()-10);
+    	Point back_up = new Point(rounded_position.getX()-10,rounded_position.getY()-10);
+    	Point front_down = new Point(rounded_position.getX()+10,rounded_position.getY()+10);
+    	Point back_down = new Point(rounded_position.getX()-10,rounded_position.getY()+10);
     	Point target = new Point();
     	// All holes are of the format (20*k1, 20*k2) or (20*k1+10,20*k2+10)
     	// Determines the next hole the player should fill based on his current position
     	return target;
     }
     
-    public void kickToClosestPlayer(Strategy calleeStrategy){
+    public void kickToClosestPlayer(double power){
     	Player closest_player = null;
     	double min_distance = 10000;
         for ( Player i : lastSeenOwnPlayers ){
@@ -424,27 +438,24 @@ public class Brain implements Runnable {
         		min_distance = this.player.distanceTo(i);
         	}
         }
-        if (Brain.first_kick!=1){
-        	if(closest_player!=null){
-        		this.kick(100.0, this.player.relativeAngleTo(closest_player));
-        		System.out.println("Player "+this.player.number +" - Kicking towards Player "+closest_player.number+" - "+calleeStrategy);
-        	}
-        	else
-        		this.executeStrategy(Strategy.LOOK_AROUND);
-        }
-        else{
-        	this.kickTowardsOpponentGoal();
-        }
+    	if(closest_player!=null){
+    		// TODO: modulate kick power
+    		this.kick(power, this.player.relativeAngleTo(closest_player));
+    		System.out.println("Player "+this.player.number +" - Kicking towards Player "+closest_player.number);
+    	}
+    	else
+    		this.executeStrategy(Strategy.LOOK_AROUND);
     }
     
     public void kickTowardsOpponentGoal(){
         FieldObject opponentGoal = this.getOrCreate(this.player.getOpponentGoalId());
     	this.kick(100.0, this.player.relativeAngleTo(opponentGoal));
-		System.out.println("Player "+this.player.number +" - First kick - Kicking towards opponent goal");
-    	Brain.first_kick=0;
+		System.out.println("Player "+this.player.number +" - Kicking towards opponent goal");
     }
     
     public void dashTowardsBall(){
+    	this.findAndDashTowardsBall();
+    	/*
     	FieldObject ball = this.getOrCreate(Ball.ID);
     	if(this.canSee(Ball.ID)){
     		this.dash(100, this.player.relativeAngleTo(ball));
@@ -452,17 +463,35 @@ public class Brain implements Runnable {
     	else{
     		this.findAndDashTowardsBall();
     	};
+    	*/
+    }
+    
+    public void findAndDashTowardsPoint(Point target){
+    	double targetDistance = this.player.position.getPosition().distanceTo(target);
+    	double approachAngle = this.player.relativeAngleTo(target);
+        double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / targetDistance));
+        // TODO: find optimal tolerance
+        double tolerance = Math.max(5.0, 100.0 / targetDistance);
+        if (Math.abs(approachAngle) > tolerance) {
+            this.turn(approachAngle);
+        }
+        else {
+        	dashPower = 100;
+            dash(dashPower, approachAngle);
+        }
     }
     
     public void findAndDashTowardsBall(){
     	FieldObject ball = this.getOrCreate(Ball.ID);
     	double approachAngle = this.player.relativeAngleTo(ball);
         double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / ball.curInfo.distance));
-        double tolerance = Math.max(10.0, 100.0 / ball.curInfo.distance);
+        // TODO: find optimal tolerance
+        double tolerance = Math.max(5.0, 100.0 / ball.curInfo.distance);
         if (Math.abs(approachAngle) > tolerance) {
             this.turn(approachAngle);
         }
         else {
+        	dashPower = 100;
             dash(dashPower, approachAngle);
         }
     }
@@ -474,10 +503,57 @@ public class Brain implements Runnable {
     	else
     		return false;
     }
-
-	public boolean occupying_hole = true;
-    public Point target_hole = null;
-    public double next = 1.00;
+    
+    public void passToBestPlayer(double power){
+    	this.kickToClosestPlayer(power);
+    }
+    
+    public boolean isOccupyingHole(){
+    	if(this.areSamePoints(this.player.position.getPosition(), this.target_hole)){
+    		//this.occupying_hole = true;
+    		//this.inTransit = false;
+    		return true;
+    	}
+    	else{
+    		//this.occupying_hole = false;
+    		//this.inTransit = true;
+    		return false;
+    	}
+    }
+    
+    public void fillCurrentHole(){
+    	if(areSamePoints(this.player.position.getPosition(), this.target_hole)){
+			// Check if target reached.
+			System.out.println("Player "+this.player.number +" reached target hole - X = " +this.player.position.getX()+", Y = "+this.player.position.getY());
+    		//this.occupying_hole=true;
+    		this.isIdle = true;
+		}
+		else{
+			// Move towards target hole.
+			//this.dashTo(target_hole, 100);
+			this.dash(100, this.player.relativeAngleTo(target_hole));
+			//this.findAndDashTowardsPoint(target_hole);
+		}
+    }
+    
+    public void fillNextHole(){
+    	System.out.println("Player "+this.player.number +" - Determining target hole.");
+		System.out.println("Player "+this.player.number +" - X = " +this.player.position.getX()+", Y = "+this.player.position.getY());
+		
+		// Determine target hole.
+		if(target_hole==null)
+			target_hole = new Point(Settings.FORMATION[this.player.number].getX()+10.00, Settings.FORMATION[this.player.number].getY()+next*10.00);
+		else
+			target_hole = new Point(this.target_hole.getX()+10.00, this.target_hole.getY()+next*10.00);
+		
+		System.out.println("Player "+this.player.number +" target - X = " +this.target_hole.getX()+", Y = "+this.target_hole.getY());
+		
+		//occupying_hole = false;
+		//inTransit = true;
+		next = next*(-1);
+		
+		this.findAndDashTowardsPoint(target_hole);
+    }
     
     private final void executeStrategy(Strategy strategy) {
     	FieldObject ball = this.getOrCreate(Ball.ID);
@@ -485,46 +561,72 @@ public class Brain implements Runnable {
         FieldObject ownGoal = this.ownGoal();
     	
         switch (strategy) {
-        case FILL_HOLE:
-        	/* Strategy:
+        case TIKI_TAKA:
+        	// TODO: Split this strategy into multiple strategies and update each strategy accordingly.
+
+        	/* TODO: Updated Strategy
+        	 * 1. Execute TIKI_TAKA strategy
+        	 * 2. Determine the best function to choose from below
+        	 * 
+        	 * FILL_HOLE - Find the best nearest hole to fill and move towards it
+        	 * FILL_NEXT_HOLE - When player is already occupying a hole and needs to find the next best hole to fill
+        	 * DASH_TOWARDS_BALL - Dash towards ball (to be used when not occupying a hole but close to ball)
+        	 * PASS_TO_PLAYER - Pass the ball to the best player
+        	 * READY_TO_CATCH - Be prepared for catching the ball
+        	 * CATCH - Catch a receiving ball
+        	 * DRIBBLE_AHEAD - Dribble ahead instead of passing the ball
+        	 * SHOOT - Shoot towards the goal
+        	 */
+        	
+        	/* Current Strategy:
         	 * Update target hole only when the the player is occupying a hole.
         	 * When player is not occupying a hole, he should be in transit towards the next hole.
         	 * The next hole is ahead of the player but alternatively above and below him.
         	 */
+        	
+        	/* TODO: Add shoot condition separately
+        	 * if(this.canShoot())
+        	 *     this.executeStrategy(this.shoot());
+        	 */
+        	
+        	/* TODO: Add catch condition separately
+        	 * if(this.canCatchBall())
+        	 *     this.executeStrategy(this.catchBall());
+        	 */
+        	
+        	
         	if (this.canKickBall()) {
-            	this.kickToClosestPlayer(strategy);
+        		// TODO: Add dribble condition and shoot conditions
+        		this.isIdle = false;
+        		this.passToBestPlayer(50);
+        		// or dribble ahead
             }
-        	else{
-        		if(this.ballInRange(3.00))
+        	// TODO: Determine optimal range
+    		
+        	else if(this.canSee(Ball.ID)||this.ballInRange(10.00)){
+        			this.isIdle = false;
+        			//if(this.ballInRange(10.00))
         			this.dashTowardsBall();
-        	}
-        	if(this.occupying_hole){
+        		}
+        	//this.isOccupyingHole();
+        	else if(this.isOccupyingHole()){
+        		if(this.isIdle){
+        			System.out.println("player idle");
+        			this.executeStrategy(Strategy.LOOK_AROUND);
+        			//this.turn(this.player.relativeAngleTo(ball));
+        		}
         		
-        		System.out.println("Player "+this.player.number +" - Determining target hole.");
-        		System.out.println("Player "+this.player.number +" - X = " +this.player.position.getX()+", Y = "+this.player.position.getY());
-        		
-        		// Determine target hole.
-        		if(target_hole==null)
-        			target_hole = new Point(Settings.FORMATION[this.player.number].getX()+10.00, Settings.FORMATION[this.player.number].getY()+next*10.00);
-        		else
-        			target_hole = new Point(this.target_hole.getX()+10.00, this.target_hole.getY()+next*10.00);
-        		
-        		System.out.println("Player "+this.player.number +" target - X = " +this.target_hole.getX()+", Y = "+this.target_hole.getY());
-        		
-        		occupying_hole = false;
-    			next = next*(-1);
+        		// this.isIdle = true;
+        		// Fill next hole, get ready to intercept, intercept
+        		// this.fillNextHole();------------------------------------
+        		// or get ready to intercept
+        		// or intercept
         	}
         	else{
-        		if(areSamePoints(this.player.position.getPosition(), this.target_hole)){
-        			// Check if target reached.
-        			System.out.println("Player "+this.player.number +" reached target hole - X = " +this.player.position.getX()+", Y = "+this.player.position.getY());
-            		occupying_hole=true;
-        		}
-        		else{
-        			// Move towards target hole.
-        			//this.dashTo(target_hole, 100);
-        			this.dash(100, this.player.relativeAngleTo(target_hole));
-        		}
+        		this.isIdle = false;
+        		// Player in transit
+        		System.out.println("fill current hole");
+        		//this.fillCurrentHole();
         	}
         	break;
         case PRE_FREE_KICK_POSITION:
@@ -545,7 +647,8 @@ public class Brain implements Runnable {
         	break;
         case PRE_KICK_OFF_POSITION:
         	this.move(Settings.FORMATION[player.number]);
-        	this.isPositioned = true;     
+        	this.isPositioned = true;
+        	this.target_hole = Settings.FORMATION[player.number];
         	break;
         case PRE_KICK_OFF_ANGLE:
         	this.turn(30);
@@ -575,18 +678,11 @@ public class Brain implements Runnable {
         	
 			double traj_power = Math.min(Settings.PLAYER_PARAMS.POWER_MAX,
 	                ( v_ball.magnitude() / (1 + Settings.BALL_PARAMS.BALL_DECAY ) ) * 10); // values of 1 or 2 do not give very useful kicks.
-			if(Brain.first_kick==1){
-				this.kick(traj_power, Futil.simplifyAngle(Math.toDegrees(v_ball.direction())));
-				Brain.first_kick=0;
-			}
-			else{
-				// Pass to closest player.
-				this.executeStrategy(Strategy.DASH_TOWARDS_BALL_AND_KICK);
-			}
+			this.kick(traj_power, Futil.simplifyAngle(Math.toDegrees(v_ball.direction())));
         	break;
         case DASH_TOWARDS_BALL_AND_KICK:
             if (this.canKickBall()) {
-            	this.kickToClosestPlayer(strategy);
+            	this.kickToClosestPlayer(50);
             }
             else {
             	this.dashTowardsBall();
@@ -631,14 +727,7 @@ public class Brain implements Runnable {
    			    else {
    			        kickDir = this.player.relativeAngleTo(-90.0);
    			    }
-   			    if(Brain.first_kick==1){
-   			    	this.kick(100.0, kickDir);
-   			    	Brain.first_kick=0;
-   			    }
-   			    else{
-   			    	// Pass to the closest player.
-   			    	this.executeStrategy(Strategy.DASH_TOWARDS_BALL_AND_KICK);
-   			    }
+   			    this.kick(100.0, kickDir);
    			}
    			else {
    			    Point target = Futil.estimatePositionOf(ball, 1, this.time).getPosition();
@@ -1059,44 +1148,21 @@ public class Brain implements Runnable {
         this.acceleration.reset();
         this.currentStrategy = this.determineOptimalStrategy();
         
-        //if(player.number!=100){
         if( this.currentStrategy == Strategy.PRE_KICK_OFF_POSITION ||
 			this.currentStrategy == Strategy.PRE_KICK_OFF_ANGLE ||
+			this.currentStrategy == Strategy.PRE_FREE_KICK_POSITION ||
+			this.currentStrategy == Strategy.PRE_CORNER_KICK_POSITION
 			//this.currentStrategy == Strategy.DRIBBLE_KICK ||
-			this.currentStrategy == Strategy.ACTIVE_INTERCEPT ||
 			//this.currentStrategy == Strategy.DASH_TOWARDS_BALL_AND_KICK ||
 			//this.currentStrategy == Strategy.LOOK_AROUND ||
 			//this.currentStrategy == Strategy.GET_BETWEEN_BALL_AND_GOAL ||
-			this.currentStrategy == Strategy.PRE_FREE_KICK_POSITION ||
-			this.currentStrategy == Strategy.PRE_CORNER_KICK_POSITION 
 			//this.currentStrategy == Strategy.WING_POSITION ||
 			//this.currentStrategy == Strategy.CLEAR_BALL ||
 			//this.currentStrategy == Strategy.RUN_TO_STARTING_POSITION
 			)
         	this.executeStrategy(this.currentStrategy);
         else
-        	this.executeStrategy(Strategy.FILL_HOLE);
-        //}
-        /*
-        else{
-        	if( this.currentStrategy == Strategy.PRE_KICK_OFF_POSITION ||
-				this.currentStrategy == Strategy.PRE_KICK_OFF_ANGLE ||
-				this.currentStrategy == Strategy.DRIBBLE_KICK ||
-				//this.currentStrategy == Strategy.ACTIVE_INTERCEPT ||
-				this.currentStrategy == Strategy.DASH_TOWARDS_BALL_AND_KICK ||
-				//this.currentStrategy == Strategy.LOOK_AROUND ||
-				//this.currentStrategy == Strategy.GET_BETWEEN_BALL_AND_GOAL ||
-				//this.currentStrategy == Strategy.PRE_FREE_KICK_POSITION ||
-				//this.currentStrategy == Strategy.PRE_CORNER_KICK_POSITION ||
-				//this.currentStrategy == Strategy.WING_POSITION ||
-				this.currentStrategy == Strategy.CLEAR_BALL
-				//this.currentStrategy == Strategy.RUN_TO_STARTING_POSITION
-				)
-        		this.executeStrategy(this.currentStrategy);
-        	else
-        		//this.executeStrategy(Strategy.DASH_TOWARDS_BALL_AND_KICK);
-        		this.executeStrategy(Strategy.DASH_TOWARDS_BALL_AND_KICK);
-        }*/
+        	this.executeStrategy(Strategy.TIKI_TAKA);
     }
     
     /** 
