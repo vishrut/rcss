@@ -59,9 +59,14 @@ public class Brain implements Runnable {
     private long timeLastSee = 0;
     private long timeLastSenseBody = 0;
     private int lastRan = -1;
+    
+    public static double TT_CATCH_RADIUS = 5.0;
+    public static double PASS_POWER = 50;
+    public static double BALL_DASH_TOLERANCE = 10;
+    public static double POINT_DASH_TOLERANCE = 10;
 
 	//public boolean occupying_hole = true;
-    public Point target_hole = null;
+    public Point targetHole = null;
     public double next = 1.00;
     public boolean isIdle = true;
     //public boolean inTransit = false;
@@ -368,9 +373,9 @@ public class Brain implements Runnable {
     		multY = -10.00;
     	int roundX = (int)(abs(P.getX())+5.00)/10;
     	int roundY = (int)(abs(P.getY())+5.00)/10;
-    	Point rounded_tens = new Point(multX*roundX, multY*roundY);
-    	System.out.println("Rounded tens point is ("+rounded_tens.getX()+", "+rounded_tens.getY()+").");
-    	return rounded_tens;
+    	Point roundedTens = new Point(multX*roundX, multY*roundY);
+    	System.out.println("Rounded tens point is ("+roundedTens.getX()+", "+roundedTens.getY()+").");
+    	return roundedTens;
     }
     
     public boolean isRTaHole(Point P){
@@ -418,11 +423,11 @@ public class Brain implements Runnable {
     }
     
     public Point determineTargetHole(){
-    	Point rounded_position = roundToNearestHole(this.player.position.getPosition());
-    	Point front_up = new Point(rounded_position.getX()+10,rounded_position.getY()-10);
-    	Point back_up = new Point(rounded_position.getX()-10,rounded_position.getY()-10);
-    	Point front_down = new Point(rounded_position.getX()+10,rounded_position.getY()+10);
-    	Point back_down = new Point(rounded_position.getX()-10,rounded_position.getY()+10);
+    	Point roundedPosition = roundToNearestHole(this.player.position.getPosition());
+    	Point frontUp = new Point(roundedPosition.getX()+10,roundedPosition.getY()-10);
+    	Point backUp = new Point(roundedPosition.getX()-10,roundedPosition.getY()-10);
+    	Point frontDown = new Point(roundedPosition.getX()+10,roundedPosition.getY()+10);
+    	Point backDown = new Point(roundedPosition.getX()-10,roundedPosition.getY()+10);
     	Point target = new Point();
     	// All holes are of the format (20*k1, 20*k2) or (20*k1+10,20*k2+10)
     	// Determines the next hole the player should fill based on his current position
@@ -430,18 +435,18 @@ public class Brain implements Runnable {
     }
     
     public void kickToClosestPlayer(double power){
-    	Player closest_player = null;
-    	double min_distance = 10000;
+    	Player closestPlayer = null;
+    	double minDistance = 10000;
         for ( Player i : lastSeenOwnPlayers ){
-        	if(this.player.distanceTo(i)<=min_distance){
-        		closest_player = i;
-        		min_distance = this.player.distanceTo(i);
+        	if(this.player.distanceTo(i)<=minDistance){
+        		closestPlayer = i;
+        		minDistance = this.player.distanceTo(i);
         	}
         }
-    	if(closest_player!=null){
+    	if(closestPlayer!=null){
     		// TODO: modulate kick power
-    		this.kick(power, this.player.relativeAngleTo(closest_player));
-    		System.out.println("Player "+this.player.number +" - Kicking towards Player "+closest_player.number);
+    		this.kick(power, closestPlayer.curInfo.direction);
+    		System.out.println("Player "+this.player.number +" - Kicking towards Player "+closestPlayer.number);
     	}
     	else
     		this.executeStrategy(Strategy.LOOK_AROUND);
@@ -454,24 +459,11 @@ public class Brain implements Runnable {
     }
     
     public void dashTowardsBall(){
-    	this.findAndDashTowardsBall();
-    	/*
     	FieldObject ball = this.getOrCreate(Ball.ID);
-    	if(this.canSee(Ball.ID)){
-    		this.dash(100, this.player.relativeAngleTo(ball));
-		}
-    	else{
-    		this.findAndDashTowardsBall();
-    	};
-    	*/
-    }
-    
-    public void findAndDashTowardsPoint(Point target){
-    	double targetDistance = this.player.position.getPosition().distanceTo(target);
-    	double approachAngle = this.player.relativeAngleTo(target);
-        double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / targetDistance));
+    	double approachAngle = ball.curInfo.direction;
+        double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / ball.curInfo.distance));
         // TODO: find optimal tolerance
-        double tolerance = Math.max(5.0, 100.0 / targetDistance);
+        double tolerance = Math.max(Brain.BALL_DASH_TOLERANCE, 100.0 / ball.curInfo.distance);
         if (Math.abs(approachAngle) > tolerance) {
             this.turn(approachAngle);
         }
@@ -481,12 +473,12 @@ public class Brain implements Runnable {
         }
     }
     
-    public void findAndDashTowardsBall(){
-    	FieldObject ball = this.getOrCreate(Ball.ID);
-    	double approachAngle = this.player.relativeAngleTo(ball);
-        double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / ball.curInfo.distance));
+    public void dashTowardsPoint(Point target){
+    	double targetDistance = this.player.position.getPosition().distanceTo(target);
+    	double approachAngle = this.player.relativeAngleTo(target);
+        double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / targetDistance));
         // TODO: find optimal tolerance
-        double tolerance = Math.max(5.0, 100.0 / ball.curInfo.distance);
+        double tolerance = Math.max(Brain.POINT_DASH_TOLERANCE, 100.0 / targetDistance);
         if (Math.abs(approachAngle) > tolerance) {
             this.turn(approachAngle);
         }
@@ -509,20 +501,16 @@ public class Brain implements Runnable {
     }
     
     public boolean isOccupyingHole(){
-    	if(this.areSamePoints(this.player.position.getPosition(), this.target_hole)){
-    		//this.occupying_hole = true;
-    		//this.inTransit = false;
+    	if(this.areSamePoints(this.player.position.getPosition(), this.targetHole)){
     		return true;
     	}
     	else{
-    		//this.occupying_hole = false;
-    		//this.inTransit = true;
     		return false;
     	}
     }
     
     public void fillCurrentHole(){
-    	if(areSamePoints(this.player.position.getPosition(), this.target_hole)){
+    	if(areSamePoints(this.player.position.getPosition(), this.targetHole)){
 			// Check if target reached.
 			System.out.println("Player "+this.player.number +" reached target hole - X = " +this.player.position.getX()+", Y = "+this.player.position.getY());
     		//this.occupying_hole=true;
@@ -530,9 +518,9 @@ public class Brain implements Runnable {
 		}
 		else{
 			// Move towards target hole.
-			//this.dashTo(target_hole, 100);
-			this.dash(100, this.player.relativeAngleTo(target_hole));
-			//this.findAndDashTowardsPoint(target_hole);
+			//this.dashTo(targetHole, 100);
+			this.dash(100, this.player.relativeAngleTo(targetHole));
+			//this.findAndDashTowardsPoint(targetHole);
 		}
     }
     
@@ -541,18 +529,18 @@ public class Brain implements Runnable {
 		System.out.println("Player "+this.player.number +" - X = " +this.player.position.getX()+", Y = "+this.player.position.getY());
 		
 		// Determine target hole.
-		if(target_hole==null)
-			target_hole = new Point(Settings.FORMATION[this.player.number].getX()+10.00, Settings.FORMATION[this.player.number].getY()+next*10.00);
+		if(targetHole==null)
+			targetHole = new Point(Settings.FORMATION[this.player.number].getX()+10.00, Settings.FORMATION[this.player.number].getY()+next*10.00);
 		else
-			target_hole = new Point(this.target_hole.getX()+10.00, this.target_hole.getY()+next*10.00);
+			targetHole = new Point(this.targetHole.getX()+10.00, this.targetHole.getY()+next*10.00);
 		
-		System.out.println("Player "+this.player.number +" target - X = " +this.target_hole.getX()+", Y = "+this.target_hole.getY());
+		System.out.println("Player "+this.player.number +" target - X = " +this.targetHole.getX()+", Y = "+this.targetHole.getY());
 		
 		//occupying_hole = false;
 		//inTransit = true;
 		next = next*(-1);
 		
-		this.findAndDashTowardsPoint(target_hole);
+		this.dashTowardsPoint(targetHole);
     }
     
     private final void executeStrategy(Strategy strategy) {
@@ -603,7 +591,7 @@ public class Brain implements Runnable {
             }
         	// TODO: Determine optimal range
     		
-        	else if(this.canSee(Ball.ID)||this.ballInRange(10.00)){
+        	else if(this.ballInRange(Brain.TT_CATCH_RADIUS)){
         			this.isIdle = false;
         			//if(this.ballInRange(10.00))
         			this.dashTowardsBall();
@@ -648,7 +636,7 @@ public class Brain implements Runnable {
         case PRE_KICK_OFF_POSITION:
         	this.move(Settings.FORMATION[player.number]);
         	this.isPositioned = true;
-        	this.target_hole = Settings.FORMATION[player.number];
+        	this.targetHole = Settings.FORMATION[player.number];
         	break;
         case PRE_KICK_OFF_ANGLE:
         	this.turn(30);
@@ -818,6 +806,7 @@ public class Brain implements Runnable {
             return this.fieldObjects.get(id);
         }
         else {
+        	System.out.println("Player "+this.player.number+" - Creating field object - "+id);
             return FieldObject.create(id);
         }
     }
@@ -830,6 +819,7 @@ public class Brain implements Runnable {
      * @param o2 the second flag
      */
     private final void inferPositionAndDirection(FieldObject o1, FieldObject o2) {
+    	// TODO: This is not very accurate, find a better strategy
         // x1, x2, y1 and y2 are relative Cartesian coordinates to the flags
         double x1 = Math.cos(Math.toRadians(o1.curInfo.direction)) * o1.curInfo.distance;
         double y1 = Math.sin(Math.toRadians(o1.curInfo.direction)) * o1.curInfo.distance;

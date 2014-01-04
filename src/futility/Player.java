@@ -30,6 +30,7 @@ public class Player extends MobileObject {
      * @param id the player's ObjectId
      */
     public Player(String id){
+    	System.out.println(id);
     	String[] parts = id.substring(1, id.length() - 1).split(" ");
     	switch(parts.length){
     	case 5:
