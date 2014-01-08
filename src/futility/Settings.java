@@ -68,6 +68,7 @@ public class Settings {
         public static final String KICK = "kick";
         public static final String TURN = "turn";
         public static final String MOVE = "move";
+        public static final String SAY = "say";
     }
     
     public static enum RESPONSE {

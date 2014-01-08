@@ -65,17 +65,21 @@ public class Brain implements Runnable {
     public static double BALL_DASH_TOLERANCE = 10;
     public static double POINT_DASH_TOLERANCE = 10;
 
+    public boolean shouldBeLooking = false;
 	//public boolean occupying_hole = true;
     public Point targetHole = null;
     public double next = 1.00;
     public boolean isIdle = true;
+    public boolean readyToCatch = true;
     //public boolean inTransit = false;
 
     private int noSeeBallCount = 0;
-    private final int noSeeBallCountMax = 45;
+    private final int noSeeBallCountMax = 5;
     
     private Strategy currentStrategy = Strategy.LOOK_AROUND;
     private boolean updateStrategy = true;
+    public String myString;
+
 
     ///////////////////////////////////////////////////////////////////////////
     // CONSTRUCTORS
@@ -103,6 +107,8 @@ public class Brain implements Runnable {
         this.responseHistory.add(Settings.RESPONSE.NONE);
         this.responseHistory.add(Settings.RESPONSE.NONE);
         // roundToNearestHole(new Point(0,16));
+
+       
     }
     
     ///////////////////////////////////////////////////////////////////////////
@@ -122,7 +128,7 @@ public class Brain implements Runnable {
      * @return an assessment of the strategy's utility in the range [0.0, 1.0]
      */
     private final double assessUtility(Strategy strategy) {
-        FieldObject ball = this.getOrCreate(Ball.ID);
+        //FieldObject ball = this.getOrCreate(Ball.ID);
         double utility = 0;
         switch (strategy) {
         case PRE_FREE_KICK_POSITION:
@@ -132,8 +138,11 @@ public class Brain implements Runnable {
         	if (this.canUseMove()) {
         		utility = 1 - (isPositioned ? 1 : 0);
         		if(this.isPositioned)
-        			if(this.player.number!=1)
-        				this.executeStrategy(Strategy.LOOK_AROUND);
+        			if(this.player.number!=1){
+        				//this.executeStrategy(Strategy.LOOK_AROUND);
+        				this.readyToCatch = false;
+        			}
+        				
         	}
         	else
         		utility = 0;
@@ -374,7 +383,7 @@ public class Brain implements Runnable {
     	int roundX = (int)(abs(P.getX())+5.00)/10;
     	int roundY = (int)(abs(P.getY())+5.00)/10;
     	Point roundedTens = new Point(multX*roundX, multY*roundY);
-    	System.out.println("Rounded tens point is ("+roundedTens.getX()+", "+roundedTens.getY()+").");
+    	//System.out.println("Rounded tens point is ("+roundedTens.getX()+", "+roundedTens.getY()+").");
     	return roundedTens;
     }
     
@@ -443,13 +452,19 @@ public class Brain implements Runnable {
         		minDistance = this.player.distanceTo(i);
         	}
         }
-    	if(closestPlayer!=null){
+    	if(closestPlayer!=null&&closestPlayer.number>0&&closestPlayer.number<12){
     		// TODO: modulate kick power
     		this.kick(power, closestPlayer.curInfo.direction);
     		System.out.println("Player "+this.player.number +" - Kicking towards Player "+closestPlayer.number);
+        	this.readyToCatch = false;
+    		this.sayMsg(""+closestPlayer.number);
     	}
-    	else
-    		this.executeStrategy(Strategy.LOOK_AROUND);
+    	else{
+    		System.out.println("Can't find anyone, Player "+this.player.number);
+    		this.shouldBeLooking = true;
+    		//this.executeStrategy(Strategy.LOOK_AROUND);
+    		//this.isIdle = true;
+    	}
     }
     
     public void kickTowardsOpponentGoal(){
@@ -459,18 +474,25 @@ public class Brain implements Runnable {
     }
     
     public void dashTowardsBall(){
-    	FieldObject ball = this.getOrCreate(Ball.ID);
-    	double approachAngle = ball.curInfo.direction;
-        double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / ball.curInfo.distance));
-        // TODO: find optimal tolerance
-        double tolerance = Math.max(Brain.BALL_DASH_TOLERANCE, 100.0 / ball.curInfo.distance);
-        if (Math.abs(approachAngle) > tolerance) {
-            this.turn(approachAngle);
-        }
-        else {
-        	dashPower = 100;
-            dash(dashPower, approachAngle);
-        }
+    	//TODO: Check how recent is the entry in dictionary, if old then refresh memory
+    	if(this.doesExist(Ball.ID)&&(this.noSeeBallCount<this.noSeeBallCountMax)){
+    		System.out.println("Player "+this.player.number+" - noSeeBallCount - "+this.noSeeBallCount);
+	    	FieldObject ball = this.getOrCreate(Ball.ID);
+	    	double approachAngle = ball.curInfo.direction;
+	        double dashPower = Math.min(100.0, Math.max(40.0, 800.0 / ball.curInfo.distance));
+	        // TODO: find optimal tolerance
+	        double tolerance = Math.max(Brain.BALL_DASH_TOLERANCE, 100.0 / ball.curInfo.distance);
+	        if (Math.abs(approachAngle) > tolerance) {
+	            this.turn(approachAngle);
+	        }
+	        else {
+	        	dashPower = 100;
+	            dash(dashPower, approachAngle);
+	        }
+    	}
+    	else{
+    		this.executeStrategy(Strategy.LOOK_AROUND);
+    	}
     }
     
     public void dashTowardsPoint(Point target){
@@ -490,7 +512,7 @@ public class Brain implements Runnable {
     
     public boolean ballInRange(double distance){
     	FieldObject ball = this.getOrCreate(Ball.ID);
-    	if(player.position.getPosition().distanceTo(ball.position.getPosition())<distance)
+    	if(ball.curInfo.distance<distance)
     		return true;
     	else
     		return false;
@@ -498,6 +520,9 @@ public class Brain implements Runnable {
     
     public void passToBestPlayer(double power){
     	this.kickToClosestPlayer(power);
+		
+    	// Find best player in an adjacent hole and kick to him
+    	// Each player should look towards the nearby holes ahead of him for the ball
     }
     
     public boolean isOccupyingHole(){
@@ -544,10 +569,9 @@ public class Brain implements Runnable {
     }
     
     private final void executeStrategy(Strategy strategy) {
-    	FieldObject ball = this.getOrCreate(Ball.ID);
-        //FieldObject opponentGoal = this.getOrCreate(this.player.getOpponentGoalId());
+    	//FieldObject opponentGoal = this.getOrCreate(this.player.getOpponentGoalId());
         FieldObject ownGoal = this.ownGoal();
-    	
+        
         switch (strategy) {
         case TIKI_TAKA:
         	// TODO: Split this strategy into multiple strategies and update each strategy accordingly.
@@ -583,24 +607,40 @@ public class Brain implements Runnable {
         	 */
         	
         	
-        	if (this.canKickBall()) {
+        	if (this.canKickBall()&&this.readyToCatch) {
         		// TODO: Add dribble condition and shoot conditions
         		this.isIdle = false;
-        		this.passToBestPlayer(50);
+        		if(!this.shouldBeLooking)
+        			this.passToBestPlayer(50);
+        		else{
+        			this.executeStrategy(Strategy.LOOK_AROUND);
+        			this.shouldBeLooking = false;
+        		}
+        		
         		// or dribble ahead
             }
         	// TODO: Determine optimal range
     		
-        	else if(this.ballInRange(Brain.TT_CATCH_RADIUS)){
-        			this.isIdle = false;
-        			//if(this.ballInRange(10.00))
-        			this.dashTowardsBall();
+        	else if(this.readyToCatch){   
+        		//(this.canSee(Ball.ID)&&this.ballInRange(Brain.TT_CATCH_RADIUS))||
+        		this.isIdle = false;
+        		if(this.readyToCatch){
+        			System.out.println("Player "+this.player.number+" is ready to catch the ball.");
         		}
+        		if(!this.shouldBeLooking)
+            		this.dashTowardsBall();
+        		else{
+        			this.executeStrategy(Strategy.LOOK_AROUND);
+        			this.shouldBeLooking = false;
+        		}
+        	}
         	//this.isOccupyingHole();
         	else if(this.isOccupyingHole()){
-        		if(this.isIdle){
-        			System.out.println("player idle");
+        		if(this.isIdle&&!this.canUseMove()){
+        			//System.out.println("player idle");
         			this.executeStrategy(Strategy.LOOK_AROUND);
+        			//this.shouldBeLooking = false;
+
         			//this.turn(this.player.relativeAngleTo(ball));
         		}
         		
@@ -612,8 +652,10 @@ public class Brain implements Runnable {
         	}
         	else{
         		this.isIdle = false;
-        		// Player in transit
-        		System.out.println("fill current hole");
+        		//this.executeStrategy(Strategy.LOOK_AROUND);
+    			this.shouldBeLooking = false;
+        		//Player in transit
+        		//System.out.println("fill current hole");
         		//this.fillCurrentHole();
         	}
         	break;
@@ -639,8 +681,9 @@ public class Brain implements Runnable {
         	this.targetHole = Settings.FORMATION[player.number];
         	break;
         case PRE_KICK_OFF_ANGLE:
-        	this.turn(30);
+        	//this.turn(30);
         	break;
+        	/*
         case WING_POSITION:
         	Point position = Futil.estimatePositionOf(ball, 3, this.time).getPosition();
         	if (this.role == PlayerRole.Role.LEFT_WING) {
@@ -651,23 +694,24 @@ public class Brain implements Runnable {
         	}
         	this.dashTo(position);
         	break;
+        	*/
+        
         case DRIBBLE_KICK:
         	/*
         	 *  Find a dribble angle, weighted by presence of opponents.
         	 *  Determine dribble velocity based on current velocity.
         	 *  Dribble!
         	 */
-        	
+        	FieldObject ball = this.getOrCreate(Ball.ID);
 			// Predict next position:
         	Vector2D v_new = Futil.estimatePositionOf(this.player, 2, this.time).getPosition().asVector();
 			Vector2D v_target = v_new.add( findDribbleAngle() );
-        	Vector2D v_ball = v_target.add( new Vector2D( -1 * ball.position.getX(),
-        			                        -1 * ball.position.getY() ) );
+        	Vector2D v_ball = v_target.add( new Vector2D( -1 * ball.position.getX(),-1 * ball.position.getY() ) );
         	
-			double traj_power = Math.min(Settings.PLAYER_PARAMS.POWER_MAX,
-	                ( v_ball.magnitude() / (1 + Settings.BALL_PARAMS.BALL_DECAY ) ) * 10); // values of 1 or 2 do not give very useful kicks.
+			double traj_power = Math.min(Settings.PLAYER_PARAMS.POWER_MAX,( v_ball.magnitude() / (1 + Settings.BALL_PARAMS.BALL_DECAY ) ) * 10); // values of 1 or 2 do not give very useful kicks.
 			this.kick(traj_power, Futil.simplifyAngle(Math.toDegrees(v_ball.direction())));
         	break;
+        
         case DASH_TOWARDS_BALL_AND_KICK:
             if (this.canKickBall()) {
             	this.kickToClosestPlayer(50);
@@ -679,6 +723,7 @@ public class Brain implements Runnable {
         case LOOK_AROUND:
         	turn(90.0);
             break;
+            /*
         case GET_BETWEEN_BALL_AND_GOAL:
             if (this.role == Role.GOALIE) {
                 double targetFacingDir = 0.0;
@@ -706,6 +751,7 @@ public class Brain implements Runnable {
             	}
             }
         	break;
+        	
         case CLEAR_BALL:
    			if (canKickBall()) {
    			    double kickDir;
@@ -740,6 +786,7 @@ public class Brain implements Runnable {
         	break;
         default:
             break;
+            */
         }
     }
     
@@ -801,12 +848,20 @@ public class Brain implements Runnable {
      * @param id the object's id
      * @return the field object
      */
+    
+    public boolean doesExist(String id){
+    	if(this.fieldObjects.containsKey(id))
+    		return true;
+    	else
+    		return false;
+    }
+    
     private final FieldObject getOrCreate(String id) {
         if (this.fieldObjects.containsKey(id)) {
             return this.fieldObjects.get(id);
         }
         else {
-        	System.out.println("Player "+this.player.number+" - Creating field object - "+id);
+        	//System.out.println("Player "+this.player.number+" - Creating field object - "+id);
             return FieldObject.create(id);
         }
     }
@@ -873,7 +928,7 @@ public class Brain implements Runnable {
      * @param y y-coordinate
      */
     public void move(double x, double y) {
-    	System.out.println("Moving player "+player.number+" to "+x+", "+y);
+    	//System.out.println("Moving player "+player.number+" to "+x+", "+y);
         client.sendCommand(Settings.Commands.MOVE, Double.toString(x), Double.toString(y));
         this.player.position.update(x, y, 1.0, this.time);
     }
@@ -905,12 +960,18 @@ public class Brain implements Runnable {
         client.sendCommand(Settings.Commands.KICK, Double.toString(power), Double.toString(offset));
     }
     
+    public void sayMsg(String message){
+    	client.sendCommand(Settings.Commands.SAY, message);
+    	System.out.println("Saying smthing - "+message);
+    }
+    
     /**
      * Parses a message from the soccer server. This method is called whenever
      * a message from the server is received.
      * 
      * @param message the message (string), exactly as it was received
      */
+    
     public void parseMessage(String message) {
         long timeReceived = System.currentTimeMillis();
         message = Futil.sanitize(message);
@@ -974,14 +1035,29 @@ public class Brain implements Runnable {
         // Handle `hear` messages
         else if (message.startsWith("(hear"))
         {
+        	System.out.println(message);
         	String parts[] = message.split("\\s");
         	this.time = Integer.parseInt(parts[1]);
-        	if ( parts[2].startsWith("s") || parts[2].startsWith("o") || parts[2].startsWith("c") )
+        	if ( parts[3].startsWith("s") || parts[3].startsWith("o") || parts[3].startsWith("c") )
         	{
+        		this.myString = "\""+this.player.number+"\"";
+        	    //System.out.println(myString);
         		// TODO logic for self, on-line coach, and trainer coach.
         		// Self could potentially be for feedback,
         		// On-line coach will require coach language parsing,
         		// And trainer likely will as well. Outside of Sprint #2 scope.
+        		// String nMsg = parts[3].split("\\)")[0]; 
+        		if(parts[3].startsWith("o")&&(parts.length>5)){
+        			String passMsg = parts[5].split("\\)")[0]; 
+        			System.out.println("PassMsg msg is - "+passMsg);
+        			System.out.println("myString is - "+this.myString);
+	        		if(passMsg.equals(this.myString)){
+	        			System.out.println("received hear message yo");
+	        			this.readyToCatch = true;
+	        		}
+	        		else
+	        			this.readyToCatch = false;
+        		}
         		return;
         	}
         	else
@@ -1151,8 +1227,8 @@ public class Brain implements Runnable {
 			//this.currentStrategy == Strategy.RUN_TO_STARTING_POSITION
 			)
         	this.executeStrategy(this.currentStrategy);
-        else
-        	this.executeStrategy(Strategy.TIKI_TAKA);
+        else if(!this.canUseMove())
+        		this.executeStrategy(Strategy.TIKI_TAKA);
     }
     
     /** 
